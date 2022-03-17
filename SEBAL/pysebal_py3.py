@@ -10,7 +10,7 @@ PySEBAL_dev_v3.8
 @author Sajid Pareeth
         February 2020
 """
-#import pdb
+import pdb
 import platform
 import sys
 import os
@@ -50,8 +50,8 @@ def SEBALcode(number,inputExcel):
     os.makedirs(output_folder)	
  			
     # Start log file
-    filename_logfile = os.path.join(output_folder, 'log.txt')	
-    sys.stdout = open(filename_logfile, 'w')		
+    #filename_logfile = os.path.join(output_folder, 'log.txt')	
+    #sys.stdout = open(filename_logfile, 'w')		
  		
     # Extract the Path to the DEM map from the excel file
     DEM_fileName = r"%s" %str(ws['E%d' %number].value) #'DEM_HydroShed_m'  
@@ -95,6 +95,9 @@ def SEBALcode(number,inputExcel):
  		
         # UTM Zone of the end results					
         UTM_Zone = float(ws['G%d' %number].value)
+
+        # temperature lapse
+        temp_lapse = float(ws['H%d' %number].value)
 	 						
         # Print data used from sheet General_Input
         print('MODIS Input:')			
@@ -414,10 +417,12 @@ def SEBALcode(number,inputExcel):
     except:
         h_obst_name = '%s' %str(ws['O%d' %number].value) 
         h_obst_kind_of_data=1                  # Obstacle height (m) -Replace for map based on Land use?
-        print('Map to the Obstacle height = %s' %(h_obst_name))
-											
-    #NDVIhot_low = 0.03               # Lower NDVI treshold for hot pixels
-    #NDVIhot_high = 0.20              # Higher NDVI treshold for hot pixels
+        print('Map to the Obstacle height = %s' %(h_obst_name))								
+    if Image_Type == 2 or Image_Type ==3:
+        NDVIhot_low1 = 0.03               # Lower NDVI treshold for hot pixels
+        NDVIhot_high1 = 0.20              # Higher NDVI treshold for hot pixels
+        tcoldmin1 = 2               # Lower NDVI treshold for hot pixels
+        tcoldmax1 = 5              # Higher NDVI treshold for hot pixels
     print('Lower NDVI treshold for hot pixels = %s' %(NDVIhot_low1))			
     print('Higher NDVI treshold for hot pixels = %s' %(NDVIhot_high1))					
 			
@@ -583,7 +588,6 @@ def SEBALcode(number,inputExcel):
     # ------------------------------------------------------------------------
     # ------------------------------------------------------------------------
     # ---   Extract general info from Landsat or VIIRS metadata: DOY, hour, minutes
-   
     if Image_Type == 1:
 				
         # the path to the MTL file of landsat				
@@ -608,9 +612,9 @@ def SEBALcode(number,inputExcel):
  
         # Get the information out of the VIIRS name
         year = int(Total_Day_VIIRS[1:5])
-        month = int(Total_Day_VIIRS[5:7])
+        mon = int(Total_Day_VIIRS[5:7])
         day = int(Total_Day_VIIRS[7:9])
-        Startdate = '%d-%02d-%02d' % (year,month,day)
+        Startdate = '%d-%02d-%02d' % (year,mon,day)
         DOY = datetime.datetime.strptime(Startdate,'%Y-%m-%d').timetuple().tm_yday
         hour = int(Total_Time_VIIRS[1:3])
         minutes = int(Total_Time_VIIRS[3:5])
@@ -621,7 +625,6 @@ def SEBALcode(number,inputExcel):
         res1 = '375m'
         res2 = '%sm' %int(pixel_spacing)
         res3 = '30m'
-
     if Image_Type == 3:
 
 	     #Get time from the MODIS dataset name (IMPORTANT TO KEEP THE TEMPLATE OF THE MODIS NAME CORRECT example: MOD13Q1.A2008129.h18v05.006.2015175090913.hdf)
@@ -630,7 +633,10 @@ def SEBALcode(number,inputExcel):
         # Get the information out of the VIIRS name
         year = int(Total_Day_MODIS[0:4])
         DOY = day = int(Total_Day_MODIS[4:7])
- 
+        # converting to date
+        res = datetime.datetime.strptime(str(year) + "-" + str(DOY), "%Y-%j").strftime("%m-%d-%Y")
+        mon = int(res[0:2])
+        day = int(res[3:5])
         # define the kind of sensor and resolution of the sensor	
         sensor1 = 'MODIS'
         sensor2 = 'MODIS'
@@ -740,14 +746,13 @@ def SEBALcode(number,inputExcel):
     print('---------------------------------------------------------')
     print('-------------------- Open DEM ---------------------------')
     print('---------------------------------------------------------')
-       
+    #pdb.set_trace()
     # Open DEM and create Latitude and longitude files
     lat, lon, lat_fileName, lon_fileName = DEM_lat_lon(DEM_fileName, output_folder)
      
     # Reproject from Geog Coord Syst to UTM -
     # 1) DEM - Original DEM coordinates is Geographic: lat, lon
-    dest, ulx_dem, lry_dem, lrx_dem, uly_dem, epsg_to = reproject_dataset(
-                DEM_fileName, pixel_spacing, UTM_Zone = UTM_Zone)
+    dest, ulx_dem, lry_dem, lrx_dem, uly_dem, epsg_to = reproject_dataset(DEM_fileName, pixel_spacing, UTM_Zone = UTM_Zone)
     band = dest.GetRasterBand(1)   # Get the reprojected dem band
     ncol = dest.RasterXSize        # Get the reprojected dem column size
     nrow = dest.RasterYSize        # Get the reprojected dem row size
@@ -757,9 +762,9 @@ def SEBALcode(number,inputExcel):
     data_DEM = band.ReadAsArray(0, 0, ncol, nrow)
     #data_DEM[data_DEM<0] = 1
     print('Projected DEM - ')
-    print('   Size: ', ncol, nrow)
-    print('   Upper Left corner x, y: ', ulx_dem, ',', uly_dem)
-    print('   Lower right corner x, y: ', lrx_dem, ',', lry_dem)
+    print('Size: ', ncol, nrow)
+    print('Upper Left corner x, y: ', ulx_dem, ',', uly_dem)
+    print('Lower right corner x, y: ', lrx_dem, ',', lry_dem)
   
     # 2) Latitude File - reprojection
     # Define output name of the latitude file        					
@@ -767,8 +772,7 @@ def SEBALcode(number,inputExcel):
                                         'latitude_proj_%s_%s_%s_%s_%s.tif' %(res1, year, str(mon).zfill(2), str(day).zfill(2), str(DOY).zfill(3)))
 
     # reproject latitude to the landsat projection	 and save as tiff file																																
-    lat_rep, ulx_dem, lry_dem, lrx_dem, uly_dem, epsg_to = reproject_dataset(
-               lat_fileName, pixel_spacing, UTM_Zone=UTM_Zone)
+    lat_rep, ulx_dem, lry_dem, lrx_dem, uly_dem, epsg_to = reproject_dataset(lat_fileName, pixel_spacing, UTM_Zone=UTM_Zone)
  
     # Get the reprojected latitude data															
     lat_proy = lat_rep.GetRasterBand(1).ReadAsArray(0, 0, ncol, nrow)
@@ -812,7 +816,6 @@ def SEBALcode(number,inputExcel):
         if hour >= 24:
             day += 1
             hour -= 24        
-
     if Image_Type == 3:        
 
            hour, minutes = Modis_Time(src_FileName_LST, epsg_to, proyDEM_fileName)
@@ -1009,7 +1012,6 @@ def SEBALcode(number,inputExcel):
     print('---------------------------------------------------------')
     print('-------------------- Meteo part 1 -----------------------')
     print('---------------------------------------------------------')
-   
     # Computation of some vegetation properties
     # 1)
     #constants:
@@ -1141,11 +1143,11 @@ def SEBALcode(number,inputExcel):
                 ClipLandsat=np.where(np.logical_or(np.logical_or(np.logical_or(np.logical_or(np.logical_or(np.logical_or(ls_data==0,ls_data_2==0),ls_data_3==0),ls_data_4==0),ls_data_5==0),ls_data_6==0),ls_data_7==0),0,1)
 
             # If landsat 8 then use landsat band 10 and 11
-            elif Landsat_nr == 8:
-                 src_FileName_11 = os.path.join(input_folder, '%s_B11.TIF' % (Name_Landsat_Image)) #open smallest band
+            elif Landsat_nr == 8 or Landsat_nr == 9:
+                 src_FileName_11 = os.path.join(input_folder, '%s_B1.TIF' % (Name_Landsat_Image)) #open smallest band
                  ls_data_11=Open_landsat(src_FileName_11,proyDEM_fileName)
 
-                 src_FileName_10 = os.path.join(input_folder, '%s_B10.TIF' % (Name_Landsat_Image)) #open smallest band
+                 src_FileName_10 = os.path.join(input_folder, '%s_B2.TIF' % (Name_Landsat_Image)) #open smallest band
                  ls_data_10=Open_landsat(src_FileName_10, proyDEM_fileName)
  
                  # create and save the landsat mask for all images based on band 10 and 11
@@ -1167,7 +1169,20 @@ def SEBALcode(number,inputExcel):
                 QC_mask_Cloud = np.copy(ls_data_BQA)
                 QC_mask_Cloud[ls_data_BQA<Cloud_Treshold] = 0
                 QC_mask_Cloud[ls_data_BQA>=Cloud_Treshold] = 1                             
-                BQA_LS_Available = 1               
+                BQA_LS_Available = 1 
+
+            QA_PIXEL_LS_Available = 0
+            if os.path.exists(os.path.join(input_folder, '%s_QA_PIXEL.TIF' %Name_Landsat_Image)):
+                src_FileName_QA_PIXEL = os.path.join(input_folder, '%s_QA_PIXEL.TIF' %Name_Landsat_Image)
+                ls_data_QA_PIXEL = Open_landsat(src_FileName_QA_PIXEL,proyDEM_fileName)
+                if Landsat_nr == 8:
+                    Cloud_Treshold = 3000
+                if Landsat_nr == 5 or Landsat_nr == 7:
+                    Cloud_Treshold = 700                    
+                QC_mask_Cloud = np.copy(ls_data_QA_PIXEL)
+                QC_mask_Cloud[ls_data_QA_PIXEL<Cloud_Treshold] = 0
+                QC_mask_Cloud[ls_data_QA_PIXEL>=Cloud_Treshold] = 1                             
+                QA_PIXEL_LS_Available = 1              
                 
 
             # Open data of the landsat mask                            
@@ -1296,6 +1311,8 @@ def SEBALcode(number,inputExcel):
                 # Replace clouds mask is a better one is already created
                 if BQA_LS_Available == 1:
                     cloud_mask = QC_mask_Cloud
+                if QA_PIXEL_LS_Available == 1:
+                    cloud_mask = QC_mask_Cloud
                 
                 Surface_temp[cloud_mask == 1] = np.nan
                 
@@ -1392,7 +1409,12 @@ def SEBALcode(number,inputExcel):
                     mask=np.zeros((shape_lsc[1], shape_lsc[0]))
                     mask[np.logical_and.reduce((temp_surface_sharpened < (ts_cold_land+Temperature_offset_clouds),Surf_albedo > Minimum_cloud_albedo,NDVI<0.7,snow_mask!=1))]=1
                     cloud_mask=np.copy(mask)
-                    cloud_mask = Create_Buffer(cloud_mask)                
+                    cloud_mask = Create_Buffer(cloud_mask)   
+                if QA_PIXEL_LS_Available != 1:
+                    mask=np.zeros((shape_lsc[1], shape_lsc[0]))
+                    mask[np.logical_and.reduce((temp_surface_sharpened < (ts_cold_land+Temperature_offset_clouds),Surf_albedo > Minimum_cloud_albedo,NDVI<0.7,snow_mask!=1))]=1
+                    cloud_mask=np.copy(mask)
+                    cloud_mask = Create_Buffer(cloud_mask)               
            
                 # Save output maps
                 #save_GeoTiff_proy(lsc, cloud_mask, cloud_mask_fileName, shape_lsc, nband=1)
@@ -1914,7 +1936,6 @@ def SEBALcode(number,inputExcel):
             if (ws['B%d' % number].value) is not None:					
                 # Output folder NDVI	defined by the user							
                 ndvi_fileName = os.path.join(output_folder, 'Output_vegetation', 'User_NDVI_%s_%s_%s_%s_%s.tif' %(res2, year, str(mon).zfill(2), str(day).zfill(2), str(DOY).zfill(3)))
- 
                 # Reproject and reshape users NDVI  
                 NDVI=Reshape_Reproject_Input_data(r'%s' %str(ws['B%d' % number].value),ndvi_fileName, proyDEM_fileName)		 														 
                 NDVI_PROBAV_MAX = np.nanmax(NDVI)
@@ -1929,8 +1950,8 @@ def SEBALcode(number,inputExcel):
             # if the users NDVI data cannot be reprojected than use the original PROBA-V data as imported into SEBAL		
             else:
                 # Calculate the NDVI based on MODIS  
+                #pdb.set_trace()
                 NDVI = Open_reprojected_hdf(src_FileName_NDVI, 0, epsg_to, 0.0001, proyDEM_fileName)
-
                 NDVI_MODIS_MAX = np.nanmax(NDVI)
                 NDVI_MODIS_SD =  np.nanstd(NDVI) 
                 print('NDVI MODIS max ' , NDVI_MODIS_MAX)
@@ -2023,7 +2044,6 @@ def SEBALcode(number,inputExcel):
                 save_GeoTiff_proy(lsc, Surf_albedo, surface_albedo_fileName, shape_lsc, nband=1)																  
         except:
              assert "Please check the PROBA-V path, was not able to create Albedo"       
-
 
         # Calculate the Fpar, TIR, Nitrogen, Vegetation Cover, LAI and b10_emissivity based on PROBA-V      
         FPAR, tir_emis, Nitrogen_PROBAV, vegt_cover, LAI, b10_emissivity_PROBAV=Calc_vegt_para(NDVI, SAVI, water_mask, shape_lsc)
@@ -2283,6 +2303,7 @@ def SEBALcode(number,inputExcel):
     print('---------------------------------------------------------')
        
     # Temperature at sea level corrected for elevation: ??
+    #pdb.set_trace()
     ts_dem,air_dens,Temp_corr=Correct_Surface_Temp(Temp_24,temp_surface_sharpened,Temp_lapse_rate,DEM_resh,Pair,dr,Transm_corr,cos_zn,Sun_elevation,deg2rad,QC_Map)    
     NDVI_land = np.where(NDVI <= 0, np.nan, NDVI)
     NDVIhot_low = np.nanpercentile(NDVI_land, NDVIhot_low1)
@@ -2397,19 +2418,19 @@ def SEBALcode(number,inputExcel):
 
     #  Calculate soil properties   
     #SM_stress_trigger, total_soil_moisture, RZ_SM,moisture_stress_biomass,irrigation_needs,top_soil_moisture=Calc_Soil_Moisture(ETA_24,accum_prec_14d,accum_ETo_14d,EF_inst,water_mask,vegt_cover,Theta_sat,Theta_res)
-    SM_stress_trigger, total_soil_moisture, root_zone_moisture_first, moisture_stress_biomass_first,top_soil_moisture,RZ_SM_NAN = Calc_Soil_Moisture(ETA_24,EF_inst,QC_Map,water_mask,vegt_cover,Theta_sat_top,Theta_sat_sub, Theta_res_top,Theta_res_sub, depl_factor,Field_Capacity,FPAR, Soil_moisture_wilting_point)
+    #SM_stress_trigger, total_soil_moisture, root_zone_moisture_first, moisture_stress_biomass_first,top_soil_moisture,RZ_SM_NAN = Calc_Soil_Moisture(ETA_24,EF_inst,QC_Map,water_mask,vegt_cover,Theta_sat_top,Theta_sat_sub, Theta_res_top,Theta_res_sub, depl_factor,Field_Capacity,FPAR, Soil_moisture_wilting_point)
     
     # seperation of E and T
-    Eact_24,Tpot_24,Tact_24,moisture_stress_biomass,T24_deficit,beneficial_fraction,root_zone_moisture_final,top_zone_moisture_final=Separate_E_T(Light_use_extinction_factor,LAI,ETP_24,Theta_res_top, Theta_res_sub,Theta_sat_top,Theta_sat_sub,top_soil_moisture,sl_es_24, Psychro_c,moisture_stress_biomass_first,vegt_cover,ETA_24,SM_stress_trigger,root_zone_moisture_first,total_soil_moisture)
+    #Eact_24,Tpot_24,Tact_24,moisture_stress_biomass,T24_deficit,beneficial_fraction,root_zone_moisture_final,top_zone_moisture_final=Separate_E_T(Light_use_extinction_factor,LAI,ETP_24,Theta_res_top, Theta_res_sub,Theta_sat_top,Theta_sat_sub,top_soil_moisture,sl_es_24, Psychro_c,moisture_stress_biomass_first,vegt_cover,ETA_24,SM_stress_trigger,root_zone_moisture_first,total_soil_moisture)
      
     # Irrigation:
-    irrigation_needs = Classify_Irrigation(moisture_stress_biomass, vegt_cover)
+    #irrigation_needs = Classify_Irrigation(moisture_stress_biomass, vegt_cover)
     
     # Save files
-    save_GeoTiff_proy(lsc, Tact_24, Tact24_fileName,shape_lsc, nband=1)
-    save_GeoTiff_proy(lsc, Eact_24, Eact24_fileName,shape_lsc, nband=1)                  
-    save_GeoTiff_proy(lsc, Tpot_24, Tpot24_fileName,shape_lsc, nband=1)                 
-    save_GeoTiff_proy(lsc, T24_deficit, T24_deficit_fileName,shape_lsc, nband=1)                 
+    #save_GeoTiff_proy(lsc, Tact_24, Tact24_fileName,shape_lsc, nband=1)
+    #save_GeoTiff_proy(lsc, Eact_24, Eact24_fileName,shape_lsc, nband=1)                  
+    #save_GeoTiff_proy(lsc, Tpot_24, Tpot24_fileName,shape_lsc, nband=1)                 
+    #save_GeoTiff_proy(lsc, T24_deficit, T24_deficit_fileName,shape_lsc, nband=1)                 
     #save_GeoTiff_proy(lsc, total_soil_moisture, total_soil_moisture_fileName,shape_lsc, nband=1)
     #save_GeoTiff_proy(lsc, top_zone_moisture_final, top_soil_moisture_fileName,shape_lsc, nband=1)
     #save_GeoTiff_proy(lsc, root_zone_moisture_final, RZ_SM_fileName, shape_lsc,nband=1)
@@ -2422,11 +2443,11 @@ def SEBALcode(number,inputExcel):
     print('---------------------------------------------------------')
  
     # calculate biomass production
-    LUE,Biomass_prod,Biomass_wp,Biomass_deficit = Calc_Biomass_production(LAI,ETP_24,moisture_stress_biomass,ETA_24,Ra_mountain_24,Transm_24,FPAR,esat_24,eact_24,Th,Kt,Tl,Temp_24,LUEmax)
+    #LUE,Biomass_prod,Biomass_wp,Biomass_deficit = Calc_Biomass_production(LAI,ETP_24,moisture_stress_biomass,ETA_24,Ra_mountain_24,Transm_24,FPAR,esat_24,eact_24,Th,Kt,Tl,Temp_24,LUEmax)
     #save_GeoTiff_proy(lsc, LUE, LUE_fileName,shape_lsc, nband=1)    
-    save_GeoTiff_proy(lsc, Biomass_prod, Biomass_prod_fileName, shape_lsc, nband=1)
-    save_GeoTiff_proy(lsc, Biomass_wp, Biomass_wp_fileName, shape_lsc, nband=1)
-    save_GeoTiff_proy(lsc, Biomass_deficit, Biomass_deficit_fileName,shape_lsc, nband=1)
+    #save_GeoTiff_proy(lsc, Biomass_prod, Biomass_prod_fileName, shape_lsc, nband=1)
+    #save_GeoTiff_proy(lsc, Biomass_wp, Biomass_wp_fileName, shape_lsc, nband=1)
+    #save_GeoTiff_proy(lsc, Biomass_deficit, Biomass_deficit_fileName,shape_lsc, nband=1)
     lsc=None
 
     print ('---------------------------------------------------------')
@@ -3394,18 +3415,15 @@ def Calc_Ra_Mountain(lon,DOY,hour,minutes,lon_proy,lat_proy,slope,aspect):
     a,b,c = Constants(delta,s,gamma,phi)
     cos_zn= AngleSlope(a,b,c,w)
     cos_zn = cos_zn.clip(Min_cos_zn, Max_cos_zn)
-    
     print('Average Cos Zenith Angle: ', '%0.3f (Radians)' % np.nanmean(cos_zn))
-
     dr = 1 + 0.033 * cos(DOY*2*pi/365)  # Inverse relative distance Earth-Sun
     # Instant. extraterrestrial solar radiation (W/m2), Allen et al.(2006):
     Ra_inst = Gsc * cos_zn * dr              
-
     # 24-hours extraterrestrial radiation
     # 1.) determine if there are one or two periods of sun
     # 2.) calculate the 24-hours extraterrestrial radiation if there are two periods of sun
     # 3.) calculate the 24-hours extraterrestrial radiation if there is one period of sun
-    
+    #pdb.set_trace()
     #1.) determine amount of sun periods
     Ra_24 = np.zeros(np.shape(lat_proy))*np.nan
     constant=Gsc*dr/(2*np.pi)
@@ -3427,10 +3445,8 @@ def Calc_Ra_Mountain(lon,DOY,hour,minutes,lon_proy,lat_proy,slope,aspect):
     # cos_theta_flat = (np.sin(delta) * np.sin(phi) + np.cos(delta) * np.cos(phi) * np.cos(w))
 
     # Mountain radiation
-    Ra_mountain_24 = np.where(Ra_24 > Min_cos_zn * Ra_hor_24, Ra_24 / np.cos(s),
-                           Ra_hor_24)
+    Ra_mountain_24 = np.where(Ra_24 > Min_cos_zn * Ra_hor_24, Ra_24 / np.cos(s),Ra_hor_24)
     Ra_mountain_24[Ra_mountain_24 > 600.0] = 600.0
-                  
     return(Ra_mountain_24,Ra_inst,cos_zn,dr,phi,delta)
     
 #------------------------------------------------------------------------------    
@@ -3486,7 +3502,6 @@ def IntegrateSlope(constant,sunrise,sunset,delta,s,gamma,phi):
     SunOrNoSun = np.logical_or(((np.abs(delta + phi)) > (np.pi/2)),((np.abs(delta - phi)) > (np.pi/2)))
     integral=np.zeros(s.shape)
     ID = np.where(np.ravel(SunOrNoSun==True))
-    
     # No sunset
     if abs(delta+phi.flat[ID])>(np.pi/2):
         sunset1=np.pi
@@ -3719,6 +3734,7 @@ def reproject_dataset(dataset, pixel_spacing, UTM_Zone):
     """
 
     # 1) Open the dataset
+    #pdb.set_trace()
     g = gdal.Open(dataset)
     if g is None:
         print('input folder does not exist')
@@ -3763,8 +3779,7 @@ def reproject_dataset(dataset, pixel_spacing, UTM_Zone):
     # Up to here, all  the projection have been defined, as well as a
     # transformation from the from to the to
     ulx, uly = transform(inProj,outProj,geo_t[0], geo_t[3] + nrow_skip * geo_t[5])
-    lrx, lry = transform(inProj,outProj,geo_t[0] + geo_t[1] * (x_size-ncol_skip),
-                                        geo_t[3] + geo_t[5] * (y_size-nrow_skip))
+    lrx, lry = transform(inProj,outProj,geo_t[0] + geo_t[1] * (x_size-ncol_skip),geo_t[3] + geo_t[5] * (y_size-nrow_skip))
 
     # See how using 27700 and WGS84 introduces a z-value!
     # Now, we create an in-memory raster
@@ -3777,13 +3792,11 @@ def reproject_dataset(dataset, pixel_spacing, UTM_Zone):
     rows = int((uly - lry)/pixel_spacing)
 
     # Re-define lr coordinates based on whole number or rows and columns
-    (lrx, lry) = (ulx + col * pixel_spacing, uly -
-                  rows * pixel_spacing)
-																		
+    (lrx, lry) = (ulx + col * pixel_spacing, uly - rows * pixel_spacing)																	
     dest = mem_drv.Create('', col, rows, 1, gdal.GDT_Float32)
     
     if dest is None:
-        print('input folder to large for memory, clip input map')
+        print('input folder too large for memory, clip input map')
      
    # Calculate the new geotransform
     new_geo = (ulx, pixel_spacing, geo_t[2], uly,
@@ -3799,7 +3812,6 @@ def reproject_dataset(dataset, pixel_spacing, UTM_Zone):
     return dest, ulx, lry, lrx, uly, epsg_to
 #------------------------------------------------------------------------------
 def reproject_dataset_example(dataset, dataset_example, method = 1):
-   
     # open example dataset 
     g_ex = gdal.Open(dataset_example)
     try:
@@ -3819,7 +3831,8 @@ def reproject_dataset_example(dataset, dataset_example, method = 1):
     lry = uly + Y_raster_size * Geo[5]	
  
     # open dataset that must be transformed    
-    g_in = gdal.Open(dataset)
+    g_in_temp = gdal.Open(dataset)
+    g_in = gdal.Warp('',g_in_temp, format='MEM', outputBounds=[ulx,lry,lrx,uly])
     try:
         proj = g_in.GetProjection()
         Proj=proj.split('EPSG","')
@@ -3838,7 +3851,6 @@ def reproject_dataset_example(dataset, dataset_example, method = 1):
     dest1 = mem_drv.Create('', X_raster_size, Y_raster_size, 1, gdal.GDT_Float32)
     dest1.SetGeoTransform(Geo)
     dest1.SetProjection(osng.ExportToWkt())
-    
     # Perform the projection/resampling
     if method == 1:
         gdal.ReprojectImage(g_in, dest1, wgs84.ExportToWkt(), osng.ExportToWkt(), gdal.GRA_NearestNeighbour)
@@ -4041,9 +4053,7 @@ def sensible_heat(rah, ustar, rn_inst, g_inst, ts_dem, ts_dem_hot, ts_dem_cold,
 def Reshape_Reproject_Input_data(input_File_Name, output_File_Name, Example_extend_fileName):
 
    # Reproject the dataset based on the example       
-   data_rep, ulx_dem, lry_dem, lrx_dem, uly_dem, epsg_to = reproject_dataset_example(
-       input_File_Name, Example_extend_fileName)
-   
+   data_rep, ulx_dem, lry_dem, lrx_dem, uly_dem, epsg_to = reproject_dataset_example(input_File_Name, Example_extend_fileName)
    # Get the array information from the new created map
    band_data = data_rep.GetRasterBand(1) # Get the reprojected dem band
    ncol_data = data_rep.RasterXSize
@@ -4149,28 +4159,32 @@ def reproject_MODIS(input_name, output_name, epsg_to):
     Keywords arguments:
     output_folder -- 'C:/file/to/path/'
     '''                    
-    
     # Get environmental variable
     if platform.system() == 'Windows':
         SEBAL_env_paths = os.environ["SEBAL"].split(';')
         GDAL_env_path = SEBAL_env_paths[0]
         GDALWARP_PATH = os.path.join(GDAL_env_path, 'gdalwarp.exe')
     else:
-        SEBAL_env_paths = os.environ["SEBAL"]
-        GDAL_env_path = SEBAL_env_paths
-        GDAL_TRANSLATE = os.path.join(GDAL_env_path, 'gdal_translate')
+        #SEBAL_env_paths = os.environ["SEBAL"]
+        #GDAL_env_path = SEBAL_env_paths
+        #GDAL_TRANSLATE = os.path.join(GDAL_env_path, 'gdal_translate')
+        #GDALWARP_PATH = os.path.join(GDAL_env_path, 'gdalwarp.exe')
+        pass
     split_input = input_name.split('hdf":')
     inputname = '%shdf":"%s"' %(split_input[0],split_input[1])
-
+    if inputname.endswith(""):
+        inputname = inputname.replace('"MODIS_Grid_16DAY_250m_500m_VI:"250m 16 days NDVI""','"MODIS_Grid_16DAY_250m_500m_VI:250m 16 days NDVI"')      
     # find path to the executable
-    fullCmd = ' '.join(["%s" %(GDALWARP_PATH), '-overwrite -s_srs "+proj=sinu +lon_0=0 +x_0=0 +y_0=0 +a=6371007.181 +b=6371007.181 +units=m +no_defs"', '-t_srs EPSG:%s -of GTiff' %(epsg_to), inputname, output_name])   
+    #fullCmd = ' '.join(["%s" %(GDALWARP_PATH), '-overwrite -s_srs "+proj=sinu +lon_0=0 +x_0=0 +y_0=0 +a=6371007.181 +b=6371007.181 +units=m +no_defs"', '-t_srs EPSG:%s -of GTiff' %(epsg_to), inputname, output_name])   
+    fullCmd = ' '.join(["gdalwarp", '-overwrite -s_srs "+proj=sinu +lon_0=0 +x_0=0 +y_0=0 +a=6371007.181 +b=6371007.181 +units=m +no_defs"', '-t_srs EPSG:%s -of GTiff' %(epsg_to), inputname, output_name])   
+    
     os.system(fullCmd)
 				
     return()  
 
 #------------------------------------------------------------------------------   				
 def Open_reprojected_hdf(input_name, Band, epsg_to, scale_factor, proyDEM_fileName):
-
+    #pdb.set_trace()
     g=gdal.Open(input_name, gdal.GA_ReadOnly)
     
     folder_out = os.path.dirname(input_name)
@@ -4180,7 +4194,6 @@ def Open_reprojected_hdf(input_name, Band, epsg_to, scale_factor, proyDEM_fileNa
     name_in = g.GetSubDatasets()[Band][0]
 
     reproject_MODIS(name_in, output_name_temp, epsg_to)
-
     dest, ulx_dem, lry_dem, lrx_dem, uly_dem, epsg_to = reproject_dataset_example(output_name_temp, proyDEM_fileName)
     Array = dest.GetRasterBand(1).ReadAsArray() * scale_factor
 
